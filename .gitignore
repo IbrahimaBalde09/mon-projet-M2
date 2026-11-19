@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# Données et résultats (trop lourds pour Git)
+data/*
+!data/README.md
+outputs/
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+
+# Jupyter
+.ipynb_checkpoints/

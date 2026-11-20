@@ -33,7 +33,9 @@ def block_inputs(coord, color, room_min, room_size, center):
 
 
 def _in_block(coord, center, block_size):
-    half = block_size / 2
+    # Petite marge : sans elle, un point pile sur le bord de la pièce peut
+    # échapper à tous les blocs à cause des arrondis float32 / float64.
+    half = block_size / 2 + 1e-4
     return np.flatnonzero((np.abs(coord[:, 0] - center[0]) <= half) & (np.abs(coord[:, 1] - center[1]) <= half))
 
 

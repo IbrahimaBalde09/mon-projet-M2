@@ -65,6 +65,8 @@ def add_outliers(scene, ratio, rng):
     out["segment"] = np.concatenate([scene["segment"], np.full(n_new, IGNORE_INDEX, dtype=scene["segment"].dtype)])
     if "color" in scene:
         out["color"] = np.concatenate([scene["color"], rng.uniform(0, 255, size=(n_new, 3))])
+    if "instance" in scene:
+        out["instance"] = np.concatenate([scene["instance"], np.full(n_new, -1, dtype=scene["instance"].dtype)])
     return out
 
 

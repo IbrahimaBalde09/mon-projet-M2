@@ -1,0 +1,108 @@
+import numpy as np
+import pytest
+
+torch = pytest.importorskip("torch")
+
+from segbench.datasets.blocks import RandomBlocks, predict_room
+from segbench.datasets.s3dis import save_scene
+from segbench.models.pointnet2 import (
+    FeaturePropagation,
+    PointNet2SemSeg,
+    farthest_point_sample,
+    query_ball_point,
+)
+
+SMALL = dict(npoints=(64, 32, 16, 8), radii=(0.1, 0.2, 0.4, 0.8), nsample=8)
+
+
+def test_fps_indices_distincts_et_bien_repartis():
+    torch.manual_seed(0)
+    # deux amas éloignés : FPS doit choisir des points dans les deux
+    xyz = torch.cat([torch.rand(1, 100, 3) * 0.1, torch.rand(1, 100, 3) * 0.1 + 5], dim=1)
+    idx = farthest_point_sample(xyz, 8)
+    assert idx.shape == (1, 8)
+    assert len(set(idx[0].tolist())) == 8
+    assert (idx[0] < 100).any() and (idx[0] >= 100).any()
+
+
+def test_ball_query_dans_le_rayon():
+    torch.manual_seed(0)
+    xyz = torch.rand(2, 200, 3)
+    centers = xyz[:, :10]
+    idx = query_ball_point(0.2, 16, xyz, centers)
+    assert idx.shape == (2, 10, 16)
+    grouped = torch.stack([xyz[b, idx[b]] for b in range(2)])
+    dist = (grouped - centers.unsqueeze(2)).norm(dim=-1)
+    assert (dist <= 0.2 + 1e-5).all()
+
+
+def test_feature_propagation_retrouve_les_valeurs_aux_points_connus():
+    fp = FeaturePropagation(4, [4])
+    fp.mlp = torch.nn.Identity()  # on ne teste que l'interpolation
+    sparse = torch.rand(1, 10, 3)
+    feat = torch.rand(1, 4, 10)
+    out = fp(sparse, sparse, None, feat)
+    torch.testing.assert_close(out, feat, atol=1e-4, rtol=1e-4)
+
+
+def test_forme_de_la_sortie():
+    model = PointNet2SemSeg(num_classes=13, **SMALL)
+    out = model(torch.rand(2, 256, 3), torch.rand(2, 6, 256))
+    assert out.shape == (2, 13, 256)
+
+
+def test_apprend_un_petit_exemple():
+    """Sur-apprentissage d'un seul lot : la perte doit nettement baisser.
+
+    La courbe est bruitée (FPS part d'un point aléatoire à chaque passe),
+    d'où la moyenne sur les dernières itérations.
+    """
+    torch.manual_seed(0)
+    xyz = torch.rand(2, 256, 3)
+    target = (xyz[:, :, 2] > 0.5).long()        # classe = au-dessus / en dessous
+    features = torch.rand(2, 6, 256)
+    model = PointNet2SemSeg(num_classes=2, dropout=0.0, **SMALL)
+    opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+    losses = []
+    for _ in range(60):
+        loss = torch.nn.functional.cross_entropy(model(xyz, features), target)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        losses.append(loss.item())
+    assert np.mean(losses[-10:]) < 0.6 * losses[0]
+
+
+@pytest.fixture
+def rooms(tmp_path):
+    rng = np.random.default_rng(0)
+    dirs = []
+    for name, n in (("office_1", 3000), ("hallway_1", 1500)):
+        coord = rng.uniform([0, 0, 0], [3, 2, 2.5], size=(n, 3)).astype(np.float32)
+        scene = {
+            "coord": coord,
+            "color": rng.integers(0, 256, size=(n, 3)).astype(np.uint8),
+            "segment": (coord[:, 2] > 1).astype(np.int16),
+        }
+        save_scene(scene, tmp_path / "Area_1" / name)
+        dirs.append(tmp_path / "Area_1" / name)
+    return dirs
+
+
+def test_random_blocks(rooms):
+    torch.manual_seed(0)
+    ds = RandomBlocks(rooms, num_point=512, samples_per_epoch=4, min_points=100)
+    xyz, features, target = ds[0]
+    assert xyz.shape == (512, 3) and features.shape == (6, 512) and target.shape == (512,)
+    assert features[:3].max() <= 1.0 and features[3:].min() >= 0.0
+    assert set(target.unique().tolist()) <= {0, 1}
+
+
+def test_predict_room_couvre_tous_les_points(rooms):
+    from segbench.datasets.s3dis import load_scene
+
+    scene = load_scene(rooms[0])
+    model = PointNet2SemSeg(num_classes=2, **SMALL)
+    pred = predict_room(model, scene, num_classes=2, num_point=256, block_size=1.0, stride=0.5, batch_size=8)
+    assert pred.shape == (len(scene["coord"]),)
+    assert set(np.unique(pred)) <= {0, 1}

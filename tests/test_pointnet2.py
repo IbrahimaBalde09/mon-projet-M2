@@ -106,3 +106,26 @@ def test_predict_room_couvre_tous_les_points(rooms):
     pred = predict_room(model, scene, num_classes=2, num_point=256, block_size=1.0, stride=0.5, batch_size=8)
     assert pred.shape == (len(scene["coord"]),)
     assert set(np.unique(pred)) <= {0, 1}
+
+
+@pytest.mark.parametrize("low", [0.008, 0.036, 0.001, 0.006])
+def test_predict_room_points_sur_les_bords(low):
+    """Points pile sur le bord, pas = taille du bloc : aucun ne doit être oublié.
+
+    Valeurs tirées d'un cas réel : en float32, le centre du premier bloc
+    (low + 0.5) est arrondi et le point x = low tombait juste en dehors.
+    """
+    rng = np.random.default_rng(0)
+    coord = rng.uniform([low, low, 0], [5, 4, 2.5], size=(500, 3)).astype(np.float32)
+    coord[:2, :2] = [[low, 1.3], [2.0, low]]
+    scene = {"coord": coord, "color": np.zeros((500, 3), np.uint8), "segment": np.zeros(500, np.int16)}
+    model = PointNet2SemSeg(num_classes=2, **SMALL)
+    pred = predict_room(model, scene, num_classes=2, num_point=128, block_size=1.0, stride=1.0)
+    assert pred.shape == (500,)
+
+
+def test_checkpoint_rechargeable_en_mode_securise(tmp_path):
+    model = PointNet2SemSeg(num_classes=2, **SMALL)
+    torch.save({"model": model.state_dict(), "epoch": 1, "miou": float(np.float64(0.5))}, tmp_path / "best.pth")
+    state = torch.load(tmp_path / "best.pth", weights_only=True)
+    PointNet2SemSeg(num_classes=2, **SMALL).load_state_dict(state["model"])

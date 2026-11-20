@@ -129,7 +129,7 @@ def main():
             row[3:6] = [f"{m['oa']:.4f}", f"{m['macc']:.4f}", f"{m['miou']:.4f}"]
             print(metrics.summary())
             if m["miou"] > best_miou:
-                best_miou = m["miou"]
+                best_miou = float(m["miou"])  # float Python : rechargeable avec weights_only=True
                 torch.save({"model": model.state_dict(), "epoch": epoch, "miou": best_miou}, args.out / "best.pth")
 
         torch.save({"model": model.state_dict(), "epoch": epoch}, args.out / "last.pth")

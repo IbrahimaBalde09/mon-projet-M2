@@ -16,6 +16,7 @@ src/segbench/    code du projet
   datasets/blocks.py découpage en blocs 1 m x 1 m (entraînement, test par grille glissante)
   models/pointnet2.py  PointNet++ (SSG) en PyTorch pur
   stats.py         statistiques de complexité des scènes
+  robustness.py    banc d'évaluation de robustesse (mêmes perturbations pour tous les modèles)
 tests/           tests unitaires (pytest)
 ```
 
@@ -57,6 +58,15 @@ python scripts/train_pointnet2.py --data data/processed/s3dis --out outputs/poin
 
 Sur CPU, un pas d'entraînement (8 blocs de 4096 points) prend environ 5 s : l'entraînement complet nécessite un GPU. Pour un simple essai : `--epochs 1 --samples-per-epoch 64 --batch-size 4 --max-test-rooms 2`.
 
+Évaluation de robustesse (Area 5 propre puis perturbée, 6 perturbations x 5 niveaux) et courbes :
+
+```bash
+python scripts/eval_robustness.py --data data/processed/s3dis --checkpoint outputs/pointnet2/best.pth --name pointnet2 --out outputs/robustesse/pointnet2.csv --seeds 0 1 2
+python scripts/plot_robustness.py outputs/robustesse/*.csv --out outputs/robustesse/courbes.png
+```
+
+Protocole : chaque pièce est perturbée avant le découpage en blocs, avec une graine fixée par (graine, pièce) pour que tous les modèles voient les mêmes nuages ; les métriques portent sur les points de la scène perturbée (les points aberrants ajoutés sont ignorés).
+
 ## Avancement
 
 - [x] Bibliographie ([docs/bibliographie.md](docs/bibliographie.md))
@@ -66,5 +76,6 @@ Sur CPU, un pas d'entraînement (8 blocs de 4096 points) prend environ 5 s : l'e
 - [x] Implémentation de PointNet++ (modèle, blocs, entraînement, évaluation)
 - [ ] Entraînement de PointNet++ sur S3DIS (GPU)
 - [ ] Méthodes via Pointcept (DGCNN, KPConv, MinkUNet, PTv3)
-- [ ] Étude de robustesse (densité, bruit, occlusion, complexité)
+- [x] Banc d'évaluation de robustesse (évaluation, CSV, courbes)
+- [ ] Étude de robustesse sur les modèles entraînés (densité, bruit, occlusion, complexité)
 - [ ] Analyse et rédaction

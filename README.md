@@ -65,6 +65,29 @@ python scripts/eval_robustness.py --data data/processed/s3dis --checkpoint outpu
 python scripts/plot_robustness.py outputs/robustesse/*.csv --out outputs/robustesse/courbes.png
 ```
 
+Segmenter un scan de notre propre LiDAR (.ply, .pcd, .xyz… ; un modèle entraîné avec `--no-color` si le scanner ne capte pas la couleur) :
+
+```bash
+python scripts/predict_scan.py --checkpoint outputs/pointnet2/best.pth --input mes_scans/bureau.ply --out outputs/scans/bureau_segmente.ply --show
+```
+
+Options utiles : `--scale 0.001` si le fichier est en millimètres, `--up y` si l'axe vertical est y.
+
+### Tester toute la chaîne en local, sans S3DIS
+
+`make_fake_s3dis.py` génère un faux S3DIS synthétique (18 pièces meublées) au même format que l'original. Les résultats n'ont aucune valeur scientifique : c'est seulement pour vérifier que tout tourne.
+
+```bash
+python scripts/make_fake_s3dis.py --out data/raw/fake_s3dis
+python scripts/prepare_s3dis.py --raw data/raw/fake_s3dis --out data/processed/fake_s3dis
+python scripts/s3dis_stats.py --data data/processed/fake_s3dis --out outputs/fake/stats.csv
+python scripts/train_pointnet2.py --data data/processed/fake_s3dis --out outputs/fake/pointnet2 --epochs 3 --samples-per-epoch 128 --batch-size 8 --eval-every 3 --max-test-rooms 1 --stride 1.0
+python scripts/eval_robustness.py --data data/processed/fake_s3dis --checkpoint outputs/fake/pointnet2/best.pth --name essai --out outputs/fake/robustesse.csv --corruptions gaussian_noise drop_color --severities 1 5 --max-test-rooms 1 --stride 1.0
+python scripts/plot_robustness.py outputs/fake/robustesse.csv --out outputs/fake/courbes.png
+```
+
+Sur un PC sans GPU, l'entraînement ci-dessus prend une dizaine de minutes (mIoU d'environ 47 % sur ce faux jeu).
+
 Protocole : chaque pièce est perturbée avant le découpage en blocs, avec une graine fixée par (graine, pièce) pour que tous les modèles voient les mêmes nuages ; les métriques portent sur les points de la scène perturbée (les points aberrants ajoutés sont ignorés).
 
 ## Avancement

@@ -124,6 +124,36 @@ def test_predict_room_points_sur_les_bords(low):
     assert pred.shape == (500,)
 
 
+def test_sans_couleur(rooms):
+    """Mode LiDAR sans RGB : 3 caractéristiques au lieu de 6, de bout en bout."""
+    from segbench.datasets.s3dis import load_scene
+
+    torch.manual_seed(0)
+    ds = RandomBlocks(rooms, num_point=256, samples_per_epoch=2, min_points=50, use_color=False)
+    _, features, _ = ds[0]
+    assert features.shape == (3, 256)
+    model = PointNet2SemSeg(num_classes=2, in_channels=3, **SMALL)
+    scene = load_scene(rooms[0])
+    del scene["color"]
+    pred = predict_room(model, scene, num_classes=2, num_point=256, use_color=False)
+    assert pred.shape == (len(scene["coord"]),)
+    with pytest.raises(ValueError):
+        predict_room(model, scene, num_classes=2, num_point=256, use_color=True)
+
+
+def test_load_pointnet2(tmp_path):
+    from segbench.models.pointnet2 import load_pointnet2
+
+    for use_color, channels in ((True, 6), (False, 3)):
+        model = PointNet2SemSeg(num_classes=13, in_channels=channels)
+        torch.save({"model": model.state_dict(), "use_color": use_color}, tmp_path / "m.pth")
+        loaded, flag = load_pointnet2(tmp_path / "m.pth", 13)
+        assert flag is use_color and not loaded.training
+    # ancien checkpoint, sans la clé use_color : couleur utilisée
+    torch.save({"model": PointNet2SemSeg(num_classes=13).state_dict()}, tmp_path / "old.pth")
+    assert load_pointnet2(tmp_path / "old.pth", 13)[1] is True
+
+
 def test_checkpoint_rechargeable_en_mode_securise(tmp_path):
     model = PointNet2SemSeg(num_classes=2, **SMALL)
     torch.save({"model": model.state_dict(), "epoch": 1, "miou": float(np.float64(0.5))}, tmp_path / "best.pth")

@@ -24,7 +24,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from segbench.datasets.blocks import RandomBlocks, predict_room
+from segbench.datasets.blocks import RandomBlocks, num_features, predict_room
 from segbench.datasets.s3dis import CLASSES, load_scene
 from segbench.metrics import SegmentationMetrics
 from segbench.models.pointnet2 import PointNet2SemSeg
@@ -62,7 +62,8 @@ def evaluate(model, room_dirs, args, device):
     for d in room_dirs:
         scene = load_scene(d)
         pred = predict_room(model, scene, len(CLASSES), num_point=args.num_point, block_size=args.block_size,
-                            stride=args.stride, batch_size=args.batch_size, device=device)
+                            stride=args.stride, batch_size=args.batch_size, device=device,
+                            use_color=not args.no_color)
         metrics.update(pred, scene["segment"])
     return metrics
 
@@ -82,6 +83,8 @@ def main():
     parser.add_argument("--eval-every", type=int, default=4)
     parser.add_argument("--max-test-rooms", type=int, default=None, help="limiter le test (essais rapides)")
     parser.add_argument("--no-class-weights", action="store_true")
+    parser.add_argument("--no-color", action="store_true",
+                        help="ignorer la couleur (pour appliquer le modèle à un LiDAR sans RGB)")
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -100,12 +103,12 @@ def main():
     print(f"{len(train_rooms)} pièces d'entraînement, {len(test_rooms)} de test ({args.test_area}), device={args.device}")
 
     dataset = RandomBlocks(train_rooms, num_point=args.num_point, block_size=args.block_size,
-                           samples_per_epoch=args.samples_per_epoch)
+                           samples_per_epoch=args.samples_per_epoch, use_color=not args.no_color)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, drop_last=True)
     if len(loader) == 0:
         parser.error("--samples-per-epoch doit être >= --batch-size")
 
-    model = PointNet2SemSeg(len(CLASSES)).to(args.device)
+    model = PointNet2SemSeg(len(CLASSES), in_channels=num_features(not args.no_color)).to(args.device)
     print(f"{sum(p.numel() for p in model.parameters()):,} paramètres")
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.7)
@@ -130,9 +133,11 @@ def main():
             print(metrics.summary())
             if m["miou"] > best_miou:
                 best_miou = float(m["miou"])  # float Python : rechargeable avec weights_only=True
-                torch.save({"model": model.state_dict(), "epoch": epoch, "miou": best_miou}, args.out / "best.pth")
+                torch.save({"model": model.state_dict(), "epoch": epoch, "miou": best_miou,
+                            "use_color": not args.no_color}, args.out / "best.pth")
 
-        torch.save({"model": model.state_dict(), "epoch": epoch}, args.out / "last.pth")
+        torch.save({"model": model.state_dict(), "epoch": epoch, "use_color": not args.no_color},
+                   args.out / "last.pth")
         with open(log_path, "a", newline="") as f:
             csv.writer(f).writerow(row + [f"{time.time() - start:.0f}"])
 

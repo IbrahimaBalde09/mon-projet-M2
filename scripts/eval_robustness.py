@@ -23,17 +23,17 @@ import torch
 from segbench.corruptions import SEVERITIES
 from segbench.datasets.blocks import predict_room
 from segbench.datasets.s3dis import CLASSES, load_scene
-from segbench.models.pointnet2 import PointNet2SemSeg
+from segbench.models.pointnet2 import load_pointnet2
 from segbench.robustness import conditions, evaluate_condition, relative_robustness
 
 
 def pointnet2_predictor(checkpoint, args):
-    model = PointNet2SemSeg(len(CLASSES)).to(args.device)
-    model.load_state_dict(torch.load(checkpoint, map_location=args.device)["model"])
+    model, use_color = load_pointnet2(checkpoint, len(CLASSES), args.device)
 
     def predict(scene):
         return predict_room(model, scene, len(CLASSES), num_point=args.num_point, block_size=args.block_size,
-                            stride=args.stride, batch_size=args.batch_size, device=args.device)
+                            stride=args.stride, batch_size=args.batch_size, device=args.device,
+                            use_color=use_color)
 
     return predict
 

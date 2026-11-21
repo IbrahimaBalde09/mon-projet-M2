@@ -169,3 +169,16 @@ class PointNet2SemSeg(nn.Module):
         l1 = self.fp2(l1_xyz, l2_xyz, l1, l2)
         l0 = self.fp1(xyz, l1_xyz, features, l1)
         return self.head(l0)
+
+
+def load_pointnet2(checkpoint, num_classes, device="cpu"):
+    """Recharge un modèle entraîné par train_pointnet2.py.
+
+    Renvoie (modèle, use_color). Les checkpoints antérieurs à l'option
+    --no-color n'ont pas la clé ``use_color`` : ils utilisaient la couleur.
+    """
+    state = torch.load(checkpoint, map_location=device, weights_only=True)
+    use_color = state.get("use_color", True)
+    model = PointNet2SemSeg(num_classes, in_channels=6 if use_color else 3).to(device)
+    model.load_state_dict(state["model"])
+    return model.eval(), use_color

@@ -7,7 +7,8 @@ un nombre fixe de points (4096).
 
 Entrées du réseau pour chaque point :
     xyz      x, y centrés sur le bloc ; z depuis le sol de la pièce
-    features couleur RGB / 255 et position normalisée dans la pièce (0..1)
+    features couleur RGB / 255 (sauf si use_color=False, pour les LiDAR
+             sans couleur) et position normalisée dans la pièce (0..1)
 
 Entraînement : blocs tirés au hasard (``RandomBlocks``).
 Test : grille glissante couvrant toute la pièce, chaque point reçoit la
@@ -23,13 +24,20 @@ from torch.utils.data import Dataset
 from segbench.datasets.s3dis import load_scene
 
 
+def num_features(use_color):
+    """Nombre de caractéristiques par point en entrée du réseau."""
+    return 6 if use_color else 3
+
+
 def block_inputs(coord, color, room_min, room_size, center):
-    """Construit (xyz, features) pour les points d'un bloc."""
+    """Construit (xyz, features) pour les points d'un bloc ; ``color=None`` : sans couleur."""
     xyz = coord - room_min
     local = xyz.copy()
     local[:, :2] -= center[:2] - room_min[:2]
-    features = np.concatenate([color / 255.0, xyz / np.maximum(room_size, 1e-6)], axis=1)
-    return local.astype(np.float32), features.astype(np.float32)
+    features = [xyz / np.maximum(room_size, 1e-6)]
+    if color is not None:
+        features.insert(0, color / 255.0)
+    return local.astype(np.float32), np.concatenate(features, axis=1).astype(np.float32)
 
 
 def _in_block(coord, center, block_size):
@@ -59,7 +67,7 @@ class RandomBlocks(Dataset):
     """
 
     def __init__(self, room_dirs, num_point=4096, block_size=1.0, samples_per_epoch=5000,
-                 min_points=1024, augment=True):
+                 min_points=1024, augment=True, use_color=True):
         self.rooms = [load_scene(d) for d in room_dirs]
         if not self.rooms:
             raise ValueError("aucune pièce fournie")
@@ -71,6 +79,7 @@ class RandomBlocks(Dataset):
         self.num_point, self.block_size = num_point, block_size
         self.samples_per_epoch, self.min_points = samples_per_epoch, min_points
         self.augment = augment
+        self.use_color = use_color
 
     def __len__(self):
         return self.samples_per_epoch
@@ -87,7 +96,8 @@ class RandomBlocks(Dataset):
             if len(idx) >= self.min_points:
                 break
         idx = rng.choice(idx, self.num_point, replace=len(idx) < self.num_point)
-        xyz, features = block_inputs(coord[idx], room["color"][idx], room["min"], room["size"], center)
+        color = room["color"][idx] if self.use_color else None
+        xyz, features = block_inputs(coord[idx], color, room["min"], room["size"], center)
         if self.augment:
             xyz = _augment(xyz, rng).astype(np.float32)
         return (torch.from_numpy(xyz), torch.from_numpy(features.T.copy()),
@@ -101,11 +111,14 @@ def _grid_starts(lo, hi, block_size, stride):
 
 @torch.no_grad()
 def predict_room(model, scene, num_classes, num_point=4096, block_size=1.0, stride=0.5,
-                 batch_size=16, device="cpu", seed=0):
+                 batch_size=16, device="cpu", seed=0, use_color=True):
     """Prédit une classe pour chaque point d'une pièce (grille glissante + vote)."""
     model.eval()
     rng = np.random.default_rng(seed)
-    coord, color = scene["coord"], scene["color"]
+    coord = scene["coord"]
+    color = scene.get("color") if use_color else None
+    if use_color and color is None:
+        raise ValueError("le modèle attend des couleurs, mais la scène n'en a pas (entraîner avec --no-color)")
     room_min = coord.min(axis=0)
     room_size = coord.max(axis=0) - room_min
     scores = torch.zeros(len(coord), num_classes)
@@ -122,7 +135,8 @@ def predict_room(model, scene, num_classes, num_point=4096, block_size=1.0, stri
             pad = n_chunks * num_point - len(idx)
             idx = np.concatenate([idx, rng.choice(idx, pad, replace=True)])
             for chunk in idx.reshape(n_chunks, num_point):
-                xyz, features = block_inputs(coord[chunk], color[chunk], room_min, room_size, center)
+                xyz, features = block_inputs(coord[chunk], None if color is None else color[chunk],
+                                             room_min, room_size, center)
                 chunks.append((chunk, xyz, features))
 
     for start in range(0, len(chunks), batch_size):

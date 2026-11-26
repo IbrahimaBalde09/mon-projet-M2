@@ -65,7 +65,17 @@ python scripts/eval_robustness.py --data data/processed/s3dis --checkpoint outpu
 python scripts/plot_robustness.py outputs/robustesse/*.csv --out outputs/robustesse/courbes.png
 ```
 
-Segmenter un scan de notre propre LiDAR (.ply, .pcd, .xyz… ; un modèle entraîné avec `--no-color` si le scanner ne capte pas la couleur) :
+### Nos scans LiDAR
+
+Formats lus : .ply, .pcd, .xyz, .pts, et avec `pip install -e ".[lidar]"` les exports .las, .laz et .e57.
+
+Analyser un scan (scanner indiqué dans le fichier, couleur, densité, bruit, orientation) et le comparer à une pièce de S3DIS, en équivalents des niveaux de perturbation du banc :
+
+```bash
+python scripts/inspect_scan.py --input mes_scans/bureau.e57 --reference data/processed/s3dis/Area_5/office_1
+```
+
+Segmenter un scan (un modèle entraîné avec `--no-color` si le scanner ne capte pas la couleur) :
 
 ```bash
 python scripts/predict_scan.py --checkpoint outputs/pointnet2/best.pth --input mes_scans/bureau.ply --out outputs/scans/bureau_segmente.ply --show

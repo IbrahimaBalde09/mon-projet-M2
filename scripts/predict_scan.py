@@ -7,8 +7,8 @@ Exemples :
     # scan en millimètres, exporté avec l'axe y vers le haut (fréquent sur iPhone)
     python scripts/predict_scan.py ... --scale 0.001 --up y
 
-Formats lus (via Open3D) : .ply, .pcd, .xyz, .xyzrgb, .pts. Pour un .las,
-.laz ou .e57, convertir d'abord en .ply (par exemple avec CloudCompare).
+Formats lus : .ply, .pcd, .xyz, .xyzrgb, .pts, .las, .laz, .e57 (voir
+segbench/scan_io.py).
 
 Précautions pour que le modèle s'y retrouve :
   - unités en mètres et axe vertical z (options --scale et --up) ;
@@ -34,23 +34,13 @@ import torch
 from segbench.datasets.blocks import predict_room
 from segbench.datasets.s3dis import CLASSES
 from segbench.models.pointnet2 import load_pointnet2
+from segbench.scan_io import read_scan
 
 PALETTE = np.array([
     [230, 230, 225], [150, 120, 90], [200, 200, 190], [255, 200, 0], [255, 120, 0],
     [100, 180, 255], [160, 90, 40], [220, 60, 60], [60, 60, 220], [200, 0, 200],
     [0, 160, 120], [250, 250, 120], [120, 120, 120],
 ]) / 255.0
-
-
-def read_scan(path, scale, up):
-    pcd = o3d.io.read_point_cloud(str(path))
-    if pcd.is_empty():
-        raise SystemExit(f"impossible de lire des points dans {path}")
-    coord = np.asarray(pcd.points, dtype=np.float64) * scale
-    if up == "y":  # (x, y, z) avec y vers le haut -> (x, -z, y) avec z vers le haut
-        coord = np.stack([coord[:, 0], -coord[:, 2], coord[:, 1]], axis=1)
-    color = (np.asarray(pcd.colors) * 255).astype(np.uint8) if pcd.has_colors() else None
-    return coord.astype(np.float32), color
 
 
 def voxel_representatives(coord, voxel_size):
@@ -75,7 +65,8 @@ def main():
     parser.add_argument("--show", action="store_true", help="afficher le résultat dans une fenêtre Open3D")
     args = parser.parse_args()
 
-    coord, color = read_scan(args.input, args.scale, args.up)
+    scan = read_scan(args.input, args.scale, args.up)
+    coord, color = scan["coord"], scan["color"]
     extent = coord.max(axis=0) - coord.min(axis=0)
     print(f"{len(coord):,} points, couleur : {'oui' if color is not None else 'non'}, "
           f"dimensions {extent[0]:.1f} x {extent[1]:.1f} x {extent[2]:.1f} m")

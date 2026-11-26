@@ -14,6 +14,8 @@ dependencies = [
 
 [project.optional-dependencies]
 viz = ["open3d>=0.18", "matplotlib>=3.7"]
+# lecture des exports LiDAR .las / .laz / .e57
+lidar = ["laspy[lazrs]>=2.4", "pye57>=0.4"]
 # PyTorch : installer la version adaptée à la machine (CPU ou CUDA), voir README
 train = ["torch>=2.1"]
 dev = ["pytest>=8"]
